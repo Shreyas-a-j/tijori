@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import closing
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -131,6 +132,34 @@ class AuditRepository:
                 (limit,),
             ).fetchall()
         return [self._to_record(row) for row in rows]
+
+    def purge_older_than(self, days: int, *, dry_run: bool = False) -> int:
+        """Purge rows whose created_at is older than now - days.
+
+        ISO-8601 UTC strings in the table sort lexicographically, so string
+        comparison against an ISO-8601 UTC cutoff timestamp is valid.
+        When dry_run=True, returns the count of matching rows without deleting.
+        """
+        cutoff = (
+            (datetime.now(timezone.utc) - timedelta(days=days))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+        with closing(self._connect()) as conn:
+            if dry_run:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM audit_requests WHERE created_at < ?",
+                    (cutoff,),
+                ).fetchone()
+                return int(row[0]) if row else 0
+
+            cursor = conn.execute(
+                "DELETE FROM audit_requests WHERE created_at < ?",
+                (cutoff,),
+            )
+            deleted = cursor.rowcount
+            conn.commit()
+            return int(deleted)
 
     @staticmethod
     def _to_record(row: sqlite3.Row) -> AuditRecord:

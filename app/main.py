@@ -5,13 +5,19 @@ Run with: uvicorn app.main:app --port 8000
 
 from __future__ import annotations
 
+import hmac
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.api.routes import router
+from app.config import get_api_key, get_audit_retention_days
 from app.pipeline.pipeline import PrivacyPipeline
+
+logger = logging.getLogger("tijori.gateway")
 
 
 def create_app(*, pipeline: PrivacyPipeline | None = None) -> FastAPI:
@@ -22,6 +28,15 @@ def create_app(*, pipeline: PrivacyPipeline | None = None) -> FastAPI:
         active = pipeline or PrivacyPipeline()
         application.state.pipeline = active
         application.state.repository = active.repository
+
+        retention_days = get_audit_retention_days()
+        would_purge = active.repository.purge_older_than(
+            days=retention_days,
+            dry_run=True,
+        )
+        logger.info(
+            f"audit retention: would purge {would_purge} rows older than {retention_days} days"
+        )
         yield
 
     application = FastAPI(
@@ -30,6 +45,22 @@ def create_app(*, pipeline: PrivacyPipeline | None = None) -> FastAPI:
         description="Detect, mask, forward sanitized text, reinsert locally.",
         lifespan=lifespan,
     )
+
+    @application.middleware("http")
+    async def api_key_auth_middleware(request: Request, call_next):
+        path = request.url.path
+        if path == "/v1" or path.startswith("/v1/"):
+            expected_key = get_api_key()
+            if expected_key:
+                presented_key = request.headers.get("x-api-key")
+                if not presented_key or not hmac.compare_digest(presented_key, expected_key):
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "unauthorized"},
+                        headers={"WWW-Authenticate": "X-API-Key"},
+                    )
+        return await call_next(request)
+
     application.include_router(router)
     return application
 

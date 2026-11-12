@@ -60,14 +60,14 @@ and one-year retention — which is why the audit table exists.
 | Provision | Requirement (abridged) | Tijori control | Evidence | Status |
 |---|---|---|---|---|
 | Rule 6(1)(a) | Mask personal data or use virtual tokens mapped to it | Detect → mask with typed placeholders; originals only in a per-request vault | `privacy/masking/__init__.py`, `privacy/vault.py`; `pytest tests/privacy -q`; leakage 0 in `reports/metrics.md` | **Implemented** |
-| Rule 6(1)(b) | Control access to computer resources | API is designed for localhost; no built-in authentication | `app/main.py`, run instructions | **Partial** — put it behind an authenticated proxy; never expose port 8000 |
-| Rule 6(1)(c) | Logs and monitoring to detect unauthorised access | One audit row per request: request id, counts, outbound payload, provider, model, latency, status, leakage count | `app/audit/repository.py`, `GET /v1/audit`; `tests/platform/test_gateway.py` | **Partial** — audit trail exists; no alerting or anomaly detection |
+| Rule 6(1)(b) | Control access to computer resources | Optional `X-API-Key` gate on every `/v1/*` route; unset by default for local development | `app/main.py`; `python -m pytest tests/platform -q`; `curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/v1/audit` (401 with `TIJORI_API_KEY` set); `curl -s -o /dev/null -w '%{http_code}\n' -H 'X-API-Key: secret' localhost:8000/v1/audit` (200) | **Implemented** — configure a key before exposing the service beyond localhost |
+| Rule 6(1)(c) | Logs and monitoring to detect unauthorised access | One PII-free audit row per request; structured warnings on leakage and error records/provider failures | `app/audit/repository.py`, `app/api/routes.py`; `python -m pytest tests/platform -q` | **Partial** — audit and warning signals exist; no anomaly detection |
 | Rule 6(1)(d) | Backups / continued processing | SQLite file can be copied; no automated backup | — | **Out of scope** (deployment concern) |
-| Rule 6(1)(e) | Retain logs and data one year for investigation | Audit rows persist; no TTL or purge job | `data/audit.db` (gitignored) | **Partial** — minimum retention is met by persistence, but no policy or purge |
+| Rule 6(1)(e) | Retain logs and data one year for investigation | 365-day default retention window and explicit purge CLI; startup reports eligible rows without deleting | `app/config.py`, `app/audit/repository.py`, `app/audit/retention.py`; `python -m pytest tests/platform -q`; `python -m app.audit.retention --days 365 --dry-run` | **Implemented** — run the CLI as an operator action; startup never deletes rows |
 | Rule 6(1)(f) | Contractual safeguards with a Data Processor | The external LLM is a processor that receives only placeholders | `app/providers/openai_compatible.py`; outbound payload scan | **Partial** — technical minimisation done; contract is organisational |
 | Rule 6(1)(g) | Technical and organisational measures | Fail-closed detection, leakage gate before the provider call, tests, this mapping | `privacy/detection/__init__.py` (`DetectionError`), `app/pipeline/pipeline.py` (`OutboundLeakageError`) | **Partial** — no formal ISMS or review process |
 | Rule 7(1)–(2) | Notify Data Principals and the Board of a breach; 72-hour detailed report | PII-free audit trail with stable request ids supports forensics; no notification workflow | `GET /v1/audit/{request_id}` | **Out of scope** (organisational workflow) |
-| Rule 8 + Third Schedule | Erase data after inactivity periods; retain processing logs at least one year | Gateway stores no originals, so it holds no personal data to erase; audit rows are PII-free | audit schema | **Gap** — no retention/purge job for audit rows |
+| Rule 8 + Third Schedule | Erase data after inactivity periods; retain processing logs at least one year | Gateway stores no originals, so it holds no personal data to erase; PII-free audit rows have a 365-day default and explicit purge CLI | `app/audit/repository.py`, `app/audit/retention.py`; `python -m pytest tests/platform -q`; `python -m app.audit.retention --days 365 --dry-run` | **Implemented** — deletion requires an explicit operator action |
 | Rule 9 | Publish contact details for processing questions | — | — | **Out of scope** |
 | Rule 3 / Rule 4 | Notice content, Consent Manager | `purpose` is recorded on each request but not enforced against a consent record | `ProcessRequest.purpose`, audit column | **Out of scope** — purpose policies were explicitly deferred |
 | Rule 14 | Publish means to exercise Data Principal rights | Request ids allow locating a processing event; no rights workflow | `GET /v1/audit/{request_id}` | **Out of scope** |
@@ -99,22 +99,19 @@ sqlite3 data/audit.db "select outbound_payload from audit_requests order by crea
 
 ## Open gaps, in priority order
 
-1. **API authentication / access control (Rule 6(1)(b)).** Bind to `127.0.0.1`
-   and put an authenticating proxy in front for any shared deployment.
-2. **Audit retention policy (Rules 6(1)(e), 8).** Add a documented retention
-   window and a purge command; one year is the statutory minimum for logs.
-3. **Monitoring and alerting (Rule 6(1)(c)).** Emit a metric or webhook when a
-   `status=error` or `leakage_count>0` row is written. The second should be
-   impossible; alert if it ever happens.
-4. **Breach playbook (Rule 7).** Document who is notified and how, using
+1. **Monitoring and alerting (Rule 6(1)(c)).** Add anomaly detection and
+  operational alert delivery for `status=error` or `leakage_count>0`. The
+  second should be impossible; alert if it ever happens.
+2. **Breach playbook (Rule 7).** Document who is notified and how, using
    `request_id` and the audit row as the forensic unit.
-5. **Purpose enforcement (Rule 3 / consent).** `purpose` is currently recorded,
+3. **Purpose enforcement (Rule 3 / consent).** `purpose` is currently recorded,
    not validated. Purpose policies were out of scope for the first 6 hours.
 
 ## Claims we must not make
 
-- **"DPDP compliant."** Tijori implements a subset of one technical safeguard
-  (Rule 6(1)(a)), plus partial support for 6(1)(c), 6(1)(e) and 15. Compliance
+- **"DPDP compliant."** Tijori implements a subset of technical safeguards
+  (Rule 6(1)(a), access gating under 6(1)(b), and log retention under
+  6(1)(e)/Rule 8), plus partial support for 6(1)(c) and 15. Compliance
   is the Data Fiduciary's obligation and includes notice, consent, rights,
   retention and breach processes that this repo does not provide.
 - **"No data leaves the country."** True for originals. Sanitized text, the

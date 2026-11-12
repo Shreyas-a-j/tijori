@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.audit.repository import AuditRepository
@@ -14,7 +15,33 @@ from app.pipeline.pipeline import (
     ProviderFailure,
 )
 
+logger = logging.getLogger("tijori.gateway")
 router = APIRouter()
+
+
+def _check_record_monitoring(record: AuditRecord) -> None:
+    """Emit structured warning signal if a record indicates leakage or error.
+
+    Never logs text, originals, or mappings — only ids, counts, and status.
+    """
+    if record.leakage_count > 0:
+        logger.warning(
+            "leakage detected in audit record",
+            extra={
+                "request_id": record.request_id,
+                "leakage_count": record.leakage_count,
+                "status": record.status,
+            },
+        )
+    elif record.status == "error":
+        logger.warning(
+            "error status in audit record",
+            extra={
+                "request_id": record.request_id,
+                "leakage_count": record.leakage_count,
+                "status": record.status,
+            },
+        )
 
 
 def get_pipeline(request: Request) -> PrivacyPipeline:
@@ -60,6 +87,14 @@ def sanitize(
     try:
         return pipeline.sanitize(req)
     except PipelineFailure as exc:
+        logger.warning(
+            "gateway request failed",
+            extra={
+                "request_id": exc.request_id,
+                "leakage_count": 0,
+                "status": "error",
+            },
+        )
         raise HTTPException(
             status_code=500,
             detail=f"gateway request failed (request_id={exc.request_id})",
@@ -74,11 +109,27 @@ async def process(
     try:
         return await pipeline.process(req)
     except ProviderFailure as exc:
+        logger.warning(
+            "LLM provider request failed",
+            extra={
+                "request_id": exc.request_id,
+                "leakage_count": 0,
+                "status": "error",
+            },
+        )
         raise HTTPException(
             status_code=502,
             detail=f"LLM provider request failed (request_id={exc.request_id})",
         ) from exc
     except OutboundLeakageError as exc:
+        logger.warning(
+            "outbound payload rejected: unmasked PII detected",
+            extra={
+                "request_id": exc.request_id,
+                "leakage_count": exc.leakage_count,
+                "status": "error",
+            },
+        )
         raise HTTPException(
             status_code=500,
             detail=(
@@ -87,6 +138,14 @@ async def process(
             ),
         ) from exc
     except PipelineFailure as exc:
+        logger.warning(
+            "gateway request failed",
+            extra={
+                "request_id": exc.request_id,
+                "leakage_count": 0,
+                "status": "error",
+            },
+        )
         raise HTTPException(
             status_code=500,
             detail=f"gateway request failed (request_id={exc.request_id})",
@@ -98,7 +157,10 @@ def list_audit(
     limit: int = Query(default=50, ge=1, le=500),
     repository: AuditRepository = Depends(get_repository),
 ) -> list[AuditRecord]:
-    return repository.list(limit=limit)
+    records = repository.list(limit=limit)
+    for record in records:
+        _check_record_monitoring(record)
+    return records
 
 
 @router.get("/v1/audit/{request_id}", response_model=AuditRecord)
@@ -109,4 +171,5 @@ def get_audit(
     record = repository.get(request_id)
     if record is None:
         raise HTTPException(status_code=404, detail="audit record not found")
+    _check_record_monitoring(record)
     return record

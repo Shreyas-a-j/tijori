@@ -29,6 +29,24 @@ class Settings:
     api_url: str = _env("TIJORI_API_URL", "http://127.0.0.1:8000")
     max_input_chars: int = int(_env("TIJORI_MAX_INPUT_CHARS", "100000"))
     log_level: str = _env("TIJORI_LOG_LEVEL", "INFO")
+    api_key: str = _env("TIJORI_API_KEY", "")
+    audit_retention_days: int = int(_env("TIJORI_AUDIT_RETENTION_DAYS", "365"))
+
+
+def get_api_key() -> str:
+    """Read API key dynamically so an unset variable disables authentication.
+
+    Allows tests to toggle API key via monkeypatch.setenv.
+    """
+    return os.getenv("TIJORI_API_KEY", "")
+
+
+def get_audit_retention_days() -> int:
+    """Read retention days dynamically from environment, falling back to settings."""
+    val = os.getenv("TIJORI_AUDIT_RETENTION_DAYS")
+    if val not in (None, ""):
+        return int(val)
+    return settings.audit_retention_days
 
 
 settings = Settings()
