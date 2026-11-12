@@ -1,162 +1,243 @@
 # Tijori — DPDP Privacy Gateway
 
-**PS-02, MineArena 1.0.** A local privacy gateway between enterprise documents and
-an LLM. Detect Indian PII, replace it with typed placeholders, send only the
-sanitized payload out, reinsert originals locally, audit every request.
+Tijori sits between an enterprise document workflow and a large language model.
+It detects Indian personal data, replaces it with typed placeholders, forwards
+only the sanitized text, restores the originals locally in the response, and
+records a PII-free audit trail for every request.
 
-> **6-hour target:** one working end-to-end demo, not bonus features.
+The design follows the pattern named in the DPDP Rules, 2025, Rule 6(1)(a) —
+"masking or the use of virtual tokens mapped to that personal data" — so the
+model never receives an identifier it could memorise, leak, or train on.
 
 ```
 document ──► detect ──► mask ──► forward sanitized ──► reinsert ──► answer
                 │          │              │                │
-           Presidio +   <PERSON_1>   external LLM     original values
-           GLiNER       <AADHAAR_1>  (Ollama/OpenAI)  restored locally
-                                      │
-                                 audit row (no PII)
+          Presidio +   <PERSON_1>   external LLM     original values
+          GLiNER       <AADHAAR_1>  (Ollama/OpenAI)  restored locally
+                                     │
+                                audit row (no PII)
 ```
+
+## Capabilities
+
+- **Detection** — Microsoft Presidio with custom India recognisers (Aadhaar with
+  Verhoeff checksum, PAN, GSTIN, Voter EPIC, Passport, each context-gated) plus
+  regex patterns for phone, email, date of birth, bank accounts and cards, and
+  GLiNER (`urchade/gliner_multi_pii-v1`) with spaCy `en_core_web_sm` for people
+  and addresses. Overlapping spans are resolved deterministically; detection
+  failures are fail-closed.
+- **Masking** — every entity becomes a typed placeholder such as `<AADHAAR_1>`
+  or `<PERSON_1>`. Originals exist only in a per-request in-memory vault.
+- **Reinsertion** — exact-token restoration, case tolerant, with duplicate and
+  reordered tokens supported. Dropped or malformed placeholders are reported as
+  `missing` or `unknown`; the gateway never guesses a value.
+- **Leakage gate** — the outbound payload is scanned for every mapped original
+  before the model is called. A hit aborts the request and is audited.
+- **Pluggable provider** — any OpenAI-compatible endpoint. Ollama is the local
+  default; switching to OpenRouter, Groq or OpenAI is an environment change.
+- **Audit** — SQLite, one PII-free row per request: request id, entity counts,
+  outbound payload, provider/model, latency, status, leakage count.
+- **Access control** — optional constant-time `X-API-Key` gate on every `/v1/*`
+  route.
+- **Retention** — 365-day default window, explicit purge CLI, startup dry-run
+  report.
+- **Monitoring** — structured warnings on leakage, provider failure and error
+  records; no document text is ever logged.
+- **Demo UI** — Streamlit three-pane view (input, outbound payload, final
+  response) with a custom instruction field and an audit browser.
+- **Evaluation** — 50-document labelled dataset (English and Hindi-English),
+  precision/recall, leakage sweep, reinsertion accuracy and latency baseline.
 
 ## Stack
 
-Python 3.14 venv (already created) · FastAPI · Streamlit · SQLite · Microsoft
-Presidio + custom India recognizers · GLiNER (`urchade/gliner_multi_pii-v1`) ·
-spaCy `en_core_web_sm` · Ollama (`qwen2.5:3b`).
+Python 3.10+ (verified on 3.14) · FastAPI · Streamlit · SQLite · Microsoft
+Presidio · GLiNER · spaCy · Ollama (`qwen2.5:3b`).
 
 ## Quickstart
 
 ```bash
 source .venv/bin/activate
-pip install -r requirements.txt          # only if the venv is missing packages
+pip install -r requirements.txt
 
-# local model (one-time, ~1.9 GB)
-ollama pull qwen2.5:3b
-
+ollama pull qwen2.5:3b        # one-time, ~1.9 GB
 cp .env.example .env
+
 make test
-make api        # http://127.0.0.1:8000/docs
-make ui         # http://127.0.0.1:8501
+make api                      # http://127.0.0.1:8000/docs
+make ui                       # http://127.0.0.1:8501
 ```
 
-## Demo runbook (warm path)
+Once the model weights are present locally, the gateway needs no internet
+access: detection runs on-device and the default model is a local Ollama
+instance.
 
-Run these in order. Use separate shells where noted.
+## Configuration
+
+All settings are environment variables, read once at startup (except the API
+key and retention window, which are re-read per request).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TIJORI_LLM_PROVIDER` | `openai_compatible` | Provider adapter |
+| `TIJORI_LLM_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible endpoint |
+| `TIJORI_LLM_API_KEY` | `ollama` | Provider credential |
+| `TIJORI_LLM_MODEL` | `qwen2.5:3b` | Model name |
+| `TIJORI_LLM_TIMEOUT_S` | `120` | Provider timeout |
+| `TIJORI_LLM_TEMPERATURE` | `0.2` | Sampling temperature |
+| `TIJORI_LLM_MAX_TOKENS` | `512` | Response cap |
+| `TIJORI_DB_PATH` | `data/audit.db` | Audit database |
+| `TIJORI_API_URL` | `http://127.0.0.1:8000` | Gateway URL used by the UI |
+| `TIJORI_MAX_INPUT_CHARS` | `100000` | Request size limit |
+| `TIJORI_LOG_LEVEL` | `INFO` | Log verbosity |
+| `TIJORI_API_KEY` | *(empty)* | Enables `X-API-Key` auth on `/v1/*` |
+| `TIJORI_AUDIT_RETENTION_DAYS` | `365` | Audit retention window |
+
+To use an external provider, change only the three `TIJORI_LLM_*` values and
+keep the adapter unchanged.
+
+## API
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Provider and model status |
+| `POST` | `/v1/sanitize` | Detect and mask; returns placeholders, never originals |
+| `POST` | `/v1/process` | Sanitize, call the model, reinsert, audit |
+| `GET` | `/v1/audit` | Recent audit records (`?limit=1..500`) |
+| `GET` | `/v1/audit/{request_id}` | One audit record |
+
+Interactive schema at `/docs`. When `TIJORI_API_KEY` is set, every `/v1/*`
+request needs `X-API-Key: <key>`; `/health` stays public. Missing or wrong keys
+return `401 {"detail": "unauthorized"}`.
 
 ```bash
-# shell 1 — Ollama server
-ollama serve
+curl -s localhost:8000/v1/process \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: $TIJORI_API_KEY" \
+  -d '{"text": "My Aadhaar is 1234-5678-9012.", "doc_type": "kyc",
+       "task": "summarize",
+       "instruction": "Summarize in 3 bullet points and keep all placeholders."}'
+```
 
-# shell 2 — pre-warm the model, then leave it resident for 30 minutes
+## Demo UI
+
+```bash
+# shell 1 — model, kept resident
 OLLAMA_KEEP_ALIVE=30m ollama run qwen2.5:3b "Reply with OK."
-# Windows PowerShell: $env:OLLAMA_KEEP_ALIVE="30m"; ollama run qwen2.5:3b "Reply with OK."
 
-# shell 3 — gateway
+# shell 2 — gateway
 uvicorn app.main:app --port 8000
 
-# shell 4 — UI
+# shell 3 — UI
 streamlit run ui/app.py
 ```
 
-In the UI, the default sample is `loan_001` (loan application, 462 characters,
-ten entities). Keep the default instruction and click **Run gateway**. Expected:
-three bullets, every placeholder restored to its original value (Replaced 10,
-Missing 0), and the audit tab has one row for the request. `reports/metrics.md`
-records 10/10 replacements for this document.
+Load a sample, edit the instruction, and run. The default sample `loan_001`
+should return three bullets with all ten placeholders restored (Replaced 10,
+Missing 0), and the audit tab should show one PII-free row. A faithful summary
+is often as long as the input because every identifier token has to travel
+through reinsertion; the **Missing** counter is the honest signal. Some
+documents lose placeholders to the model (`loan_005` drops seven of nine) and the
+gateway reports them instead of guessing.
 
-The final text is often about as long as the input, because a faithful summary
-must carry every identifier token back through reinsertion. That is expected.
-The right pane's **Missing** counter is the honest signal: on some documents
-`qwen2.5:3b` drops a placeholder (for example `kyc_002` loses one), and the
-gateway reports it instead of guessing. Change the instruction in the sidebar to
-test a different summarisation style.
+Warm latency (`reports/metrics.md`): `/v1/process` p50 ≈ 4.8 s, sanitize-only
+p50 ≈ 0.26 s. Cold starts add several seconds of model load.
 
-Warm latency from `reports/metrics.md`: `/v1/process` p50 ≈ 4.8 s; sanitize-only
-p50 ≈ 0.26 s. Actual numbers depend on hardware. Skipping the pre-warm makes the
-first request much slower.
+## Evaluation
 
-### Auth enabled
+`python -m evaluation.run` replays the labelled dataset against a running
+gateway and writes `reports/metrics.md`.
 
-The gateway reads `TIJORI_API_KEY` on each request. Unset or empty means auth is
-disabled (the dev default). Export the key in each shell that starts uvicorn or
-Streamlit (or export it once in a parent shell before starting either):
+| Metric | Result |
+|---|---|
+| Documents sanitized | 50 / 50 |
+| PII leakage | **0** |
+| Macro precision / recall | 0.936 / 0.957 |
+| Reinsertion accuracy (API-reported) | 1.000 |
+| Sanitize latency (p50 / p95) | 256 ms / 296 ms |
+| `/v1/process` latency (p50 / p95) | 4 775 ms / 6 154 ms |
+| Direct provider call (p50, warm) | 4 490 ms |
+| Gateway overhead | 285 ms (6.0 %) |
+
+API-reported reinsertion accuracy is `replaced / (replaced + unknown)`; dropped
+placeholders are counted separately and never fabricated. Full per-type and
+per-document breakdowns are in `reports/metrics.md`.
+
+## Security and operations
+
+- **Auth** — set `TIJORI_API_KEY` before exposing the service beyond localhost.
+  Unset means no authentication, which is convenient for local development and
+  unsuitable for a shared deployment.
+- **Retention** — audit rows default to a 365-day window. Purge is deliberate:
+
+  ```bash
+  python -m app.audit.retention --days 365 --dry-run
+  python -m app.audit.retention --days 365
+  ```
+
+  Startup only reports how many rows are eligible; it never deletes.
+- **Audit content** — counts, placeholders and the outbound payload are stored;
+  originals and the placeholder mapping are not.
+- **Logs** — warnings carry a request id, counts and status only.
+
+See `docs/DPDP-ALIGNMENT.md` for the obligation-by-obligation mapping and
+`docs/ENTITY-COVERAGE.md` for the entity taxonomy.
+
+## Tests
 
 ```bash
-# shell 1
-export TIJORI_API_KEY='...'
-uvicorn app.main:app --port 8000
-
-# shell 2
-export TIJORI_API_KEY='...'
-streamlit run ui/app.py
+pytest -q        # 108 cases
 ```
 
-`/health` stays unauthenticated. The UI sends `X-API-Key` on `/v1/process` and
-`/v1/audit`; a 401 shows "Gateway rejected the API key (check TIJORI_API_KEY)".
-Never paste the key into the UI or commit it.
+The suite covers detection and checksums, masking, reinsertion (reorder,
+duplicate, case, drop, malformed), the four-stage pipeline, provider failure
+paths, the leakage gate, API auth, audit retention and the demo UI's offline
+and PII behaviour. The live Ollama test is marked `slow` and skips when no local
+endpoint is reachable.
 
-## Where things live
+## Project layout
 
-| Path | What |
+| Path | Contents |
 |---|---|
-| `CONTRACT.md` | Frozen interfaces, placeholders, API, audit schema, ownership |
-| `app/contracts.py` | Shared Pydantic types (single source of truth) |
-| `privacy/` | Detection, masking, vault, reinsertion (lane 1) |
-| `app/` | FastAPI, pipeline, provider, audit (lane 2) |
-| `ui/`, `data/`, `evaluation/` | Streamlit demo, dataset, metrics (lane 3) |
-| `docs/PS02.md` | Original problem statement |
-| `docs/DPDP-ALIGNMENT.md` | Rules 2025 → Tijori control → evidence mapping |
-| `docs/ENTITY-COVERAGE.md` | Presidio entity taxonomy vs detected types |
+| `CONTRACT.md` | Frozen interfaces, placeholders, API, audit schema |
+| `privacy/` | Detection, masking, vault, reinsertion |
+| `app/` | FastAPI routes, pipeline, provider, audit, configuration |
+| `ui/` | Streamlit demo |
+| `evaluation/` | Dataset replay and metrics report |
+| `data/` | Labelled dataset and local audit database |
+| `reports/` | Generated evaluation report |
+| `docs/` | DPDP mapping, entity coverage, design notes |
 
-## Regulatory basis
+## Limitations
 
-Tijori maps to the DPDP Rules, 2025 (G.S.R. 846(E), Gazette No. 760,
-13 Nov 2025). Rule 6(1)(a) names exactly this pattern — "masking or the use of
-virtual tokens mapped to that personal data":
+- Detection is tuned for Indian documents and English/Hindi-English text; the
+  taxonomy does not yet include vehicle registration numbers.
+- Reinsertion is exact-token: if the model rewrites a placeholder, it is
+  reported as `unknown` rather than repaired.
+- Purpose-based policies are recorded (`purpose` on each request) but not
+  enforced against a consent record.
+- Audit monitoring emits warnings but has no anomaly detection or alert
+  delivery.
+- The audit store is single-node SQLite; a multi-instance deployment needs a
+  shared database.
+- Tijori is a technical safeguard. It is not a DPDP compliance certificate, and
+  notice, consent, breach handling and data-principal rights remain the Data
+  Fiduciary's responsibility.
 
-| Source | What it gives us |
+## Regulatory references
+
+| Source | Purpose |
 |---|---|
 | [MeitY — DPDP Rules, 2025](https://www.meity.gov.in/documents/act-and-policies/digital-personal-data-protection-rules-2025-gDOxUjMtQWa) | Official landing page |
-| [G.S.R. 846(E), full text](https://egazette.gov.in/WriteReadData/2025/267650.pdf) | Rules 1–23 and the seven Schedules |
-| [G.S.R. 843(E), commencement](https://egazette.gov.in/WriteReadData/2025/267647.pdf) | Act phases: 13 Nov 2025, 13 Nov 2026, 13 May 2027 |
-| [Presidio supported entities](https://github.com/microsoft/presidio/blob/main/docs/supported_entities.md) | Entity taxonomy and coverage gaps |
+| [G.S.R. 846(E)](https://egazette.gov.in/WriteReadData/2025/267650.pdf) | Rules text (Rules 1–23 and Schedules) |
+| [G.S.R. 843(E)](https://egazette.gov.in/WriteReadData/2025/267647.pdf) | Commencement notification |
+| [Presidio supported entities](https://github.com/microsoft/presidio/blob/main/docs/supported_entities.md) | Entity taxonomy |
 
-Rule 6 and Rule 7 bind from 13 May 2027 under the notified Rules (the calendar
-date is computed from the +18 month period in r. 1(4)). See
-`docs/DPDP-ALIGNMENT.md` for the obligation-by-obligation status, including what
-is **not** implemented. Tijori is a technical safeguard, not a compliance
-certificate.
+Rules 6 and 7 bind from 13 May 2027 under the notified Rules; see
+`docs/DPDP-ALIGNMENT.md` for the dated phase-in.
 
-## Branches
+## License
 
-| Branch | Owner | Scope |
-|---|---|---|
-| `agent/privacy-core` | lane 1 | Presidio India recognizers, GLiNER, masking, reinsertion |
-| `agent/gateway-platform` | lane 2 | FastAPI stages, Ollama adapter, SQLite audit |
-| `agent/demo-eval` | lane 3 | Streamlit 3-pane UI, 50-doc dataset, metrics report |
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the
+full text.
 
-`main` is protected by review: Shreyas merges. Team is 3 coders (one per lane)
-plus 1 reviewer/merger. Merge order is 1 → 2 → 3. Do not edit `CONTRACT.md`,
-`app/contracts.py`, or another lane's files. Reviewer steps:
-`docs/MERGE-CHECKLIST.md`.
-
-## 6-hour plan
-
-| Hour | Lane 1 | Lane 2 | Lane 3 |
-|---|---|---|---|
-| 0–0.5 | Read contract, load models offline | Read contract, Ollama smoke test | Read contract, sample docs |
-| 0.5–2.0 | Recognizers + NER + overlap resolution | `/v1/sanitize` + `/v1/process` + provider | Dataset generator (50 docs, labels) |
-| 2.0–3.5 | Masking + vault + reinsertion tests | Audit SQLite + request IDs + error paths | Streamlit 3 panes wired to API |
-| 3.5–4.5 | Merge, fix integration bugs | Merge, run real Ollama e2e | Evaluation metrics + `reports/metrics.md` |
-| 4.5–5.5 | Leakage sweep on dataset | Latency + audit check | Demo polish, screenshots |
-| 5.5–6.0 | **Demo dry run, freeze** | **Demo dry run, freeze** | **Demo dry run, freeze** |
-
-## Out of scope for the first 6 hours
-
-Purpose-based policies, format-preserving tokenization, local-SLM fallback,
-React UI, Postgres. Add only after the core demo is green.
-
-## External LLM note
-
-Ollama is local, while PS-02 §3.4 asks for an external LLM API. The provider is
-OpenAI-compatible, so switching to OpenRouter/Groq/OpenAI is an env change
-(`TIJORI_LLM_BASE_URL`, `TIJORI_LLM_API_KEY`, `TIJORI_LLM_MODEL`). Plan to demo
-one genuinely external call before judging, or present Ollama as the local
-fallback.
+Copyright 2026 Tijori contributors.

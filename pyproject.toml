@@ -3,6 +3,8 @@ name = "tijori"
 version = "0.1.0"
 description = "DPDP-ready privacy gateway for enterprise LLMs"
 requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
