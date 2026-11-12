@@ -14,8 +14,16 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router
-from app.config import get_api_key, get_audit_retention_days
+from app.config import get_api_key, get_audit_retention_days, settings
 from app.pipeline.pipeline import PrivacyPipeline
+
+# Without a handler, the module logger's INFO lines (the startup retention
+# dry run) are dropped and only WARNING+ appears. Configure the root logger at
+# the documented level; uvicorn keeps its own handlers for its loggers.
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(levelname)s %(name)s %(message)s",
+)
 
 logger = logging.getLogger("tijori.gateway")
 

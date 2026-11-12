@@ -74,7 +74,7 @@ first request much slower.
 
 ### Auth enabled
 
-The gateway reads `TIJORI_API_KEY` at startup. Unset or empty means auth is
+The gateway reads `TIJORI_API_KEY` on each request. Unset or empty means auth is
 disabled (the dev default). Export the key in each shell that starts uvicorn or
 Streamlit (or export it once in a parent shell before starting either):
 
