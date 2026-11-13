@@ -16,6 +16,7 @@ from ingest.translate import TranslationUnavailable, translate_to_english
 
 ENGLISH = DetectedLanguage("en", "Latin", "eng_Latn", "eng", True)
 TAMIL = DetectedLanguage("ta", "Tamil", "tam_Taml", "tam", False)
+TELUGU = DetectedLanguage("te", "Telugu", "tel_Telu", "tel", False)
 
 
 @pytest.fixture(autouse=True)
@@ -75,6 +76,36 @@ def test_preserved_digits_produce_no_warning(monkeypatch):
 
     result = translate_to_english("Aadhaar 1234 5678 9012", TAMIL)
     assert result.warnings == ()
+
+
+def test_native_numerals_do_not_warn_when_the_value_survives(monkeypatch):
+    fake_model(monkeypatch)
+    monkeypatch.setattr(
+        translate_module,
+        "_translate_chunk",
+        lambda *args, **kwargs: "Account 040, phone 9849064217, PIN 2345",
+    )
+
+    # Telugu numerals: ౦౪౦ = 040, ౯౮౪౯౦౬౪౨౧౭ = 9849064217, ౨౩౪౫ = 2345.
+    result = translate_to_english(
+        "ఖాతా ౦౪౦, ఫోన్ ౯౮౪౯౦౬౪౨౧౭, పిన్ ౨౩౪౫", TELUGU
+    )
+
+    assert result.warnings == ()
+
+
+def test_native_numerals_still_warn_when_the_value_is_lost(monkeypatch):
+    fake_model(monkeypatch)
+    monkeypatch.setattr(
+        translate_module,
+        "_translate_chunk",
+        lambda *args, **kwargs: "Account number missing.",
+    )
+
+    result = translate_to_english("ఖాతా ౦౪౦", TELUGU)
+
+    assert result.warnings == ("digit sequence 040 is missing from the translation",)
+
 
 
 def test_line_structure_is_preserved(monkeypatch):

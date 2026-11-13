@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass
 
 from app.config import get_translate_enabled, get_translate_model
@@ -222,11 +223,30 @@ def _split_long(line: str, limit: int = _CHUNK_CHARS) -> list[str]:
     return pieces or [line]
 
 
+def _ascii_digits(text: str) -> str:
+    """Rewrite every Unicode decimal digit as its ASCII equivalent.
+
+    Indic documents often use native numerals (``౦౪౦`` for ``040``). NLLB
+    renders them as ASCII, so comparing glyph strings would report a loss that
+    did not happen. Comparing values keeps the warning honest.
+    """
+
+    out: list[str] = []
+    for character in text:
+        try:
+            out.append(str(unicodedata.decimal(character)))
+        except (TypeError, ValueError):
+            out.append(character)
+    return "".join(out)
+
+
 def _digit_warnings(source: str, output: str) -> tuple[str, ...]:
     """Warn about every digit sequence that did not survive translation."""
 
-    source_digits = list(dict.fromkeys(re.findall(r"\d+", source)))
-    output_digits = set(re.findall(r"\d+", output))
+    normalized_source = _ascii_digits(source)
+    normalized_output = _ascii_digits(output)
+    source_digits = list(dict.fromkeys(re.findall(r"\d+", normalized_source)))
+    output_digits = set(re.findall(r"\d+", normalized_output))
     return tuple(
         f"digit sequence {digits} is missing from the translation"
         for digits in source_digits
