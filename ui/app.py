@@ -36,8 +36,7 @@ DOC_TYPES = ("kyc", "loan_application", "support_ticket", "insurance_claim", "ot
 UPLOAD_TYPES = ["txt", "md", "csv", "docx", "pdf", "png", "jpg", "jpeg", "tif", "tiff"]
 TRANSLATION_BLOCKED = (
     "Translation unavailable — refusing to send un-translated native-script text "
-    "to the gateway. Multilingual intake is opt-in; set "
-    "TIJORI_TRANSLATE_ENABLED=1 only after the leakage report is clean."
+    "to the gateway."
 )
 #: Same wording the evaluation harness uses, so the demo matches `reports/metrics.md`.
 #: "Do not copy the document" made qwen2.5:3b drop 9 of 10 placeholders on loan_001
@@ -360,6 +359,11 @@ with st.sidebar:
                     st.session_state.pop("error", None)
     if st.session_state.get("upload_error"):
         st.error(st.session_state.upload_error)
+        if "TIJORI_TRANSLATE_ENABLED=0" in st.session_state.upload_error:
+            st.info(
+                "Enable on-device translation for this session: "
+                "`TIJORI_TRANSLATE_ENABLED=1 make ui`"
+            )
 
     st.subheader("Document")
     if sample_by_id:

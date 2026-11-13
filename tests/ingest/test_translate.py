@@ -110,8 +110,9 @@ def test_import_failure_maps_to_translation_unavailable(monkeypatch):
 def test_disabled_translation_blocks_indic_but_not_english(monkeypatch):
     monkeypatch.setenv("TIJORI_TRANSLATE_ENABLED", "0")
 
-    with pytest.raises(TranslationUnavailable, match="disabled"):
+    with pytest.raises(TranslationUnavailable, match="disabled") as excinfo:
         translate_to_english("வணக்கம்", TAMIL)
+    assert "refusing to forward" not in str(excinfo.value)
 
     result = translate_to_english("Hello", ENGLISH)
     assert result.text == "Hello"

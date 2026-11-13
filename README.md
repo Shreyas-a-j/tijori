@@ -68,7 +68,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 ollama pull qwen2.5:3b        # one-time, ~1.9 GB
-cp .env.example .env
+cp .env.example .env        # read at startup; exported variables override it
 
 make test
 make api                      # http://127.0.0.1:8000/docs

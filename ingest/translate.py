@@ -59,8 +59,7 @@ def translate_to_english(text: str, detected: DetectedLanguage) -> Translation:
 
     if not get_translate_enabled():
         raise TranslationUnavailable(
-            "on-device translation is disabled (TIJORI_TRANSLATE_ENABLED=0); "
-            "refusing to forward un-translated text"
+            "on-device translation is disabled (TIJORI_TRANSLATE_ENABLED=0)"
         )
 
     model_name = get_translate_model()
