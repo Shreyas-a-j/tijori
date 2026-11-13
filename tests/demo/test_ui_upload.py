@@ -178,3 +178,69 @@ def test_english_upload_needs_no_translation(monkeypatch):
     )
     run_button = next(button for button in app.button if button.label == "Run gateway")
     assert not run_button.disabled
+
+
+NATIVE_ADDRESS = "வைஶாலி நகர்"
+TRANSLATED_WITH_NATIVE = f"Residential address: {NATIVE_ADDRESS}, Bengaluru 560001"
+
+
+def test_native_spans_are_masked_before_the_gateway_and_restored(monkeypatch):
+    monkeypatch.setattr(
+        extract_module,
+        "extract",
+        lambda filename, data: Extraction(
+            text=TAMIL_TEXT,
+            filename=filename,
+            pages=1,
+            ocr_used=False,
+            ocr_langs=(),
+            warnings=(),
+        ),
+    )
+    monkeypatch.setattr(language_module, "detect_language", lambda text: TAMIL)
+    monkeypatch.setattr(
+        translate_module,
+        "translate_to_english",
+        lambda text, detected: Translation(
+            text=TRANSLATED_WITH_NATIVE,
+            source_lang="ta",
+            model="nllb",
+            duration_ms=5,
+            warnings=(),
+        ),
+    )
+
+    calls: dict = {"post": []}
+
+    def fake_post(url, *args, **kwargs):
+        calls["post"].append(kwargs.get("json"))
+        return FakeResponse(
+            {
+                "request_id": "req_native",
+                "final_text": "Applicant lives at <NATIVE_1> <NATIVE_2>, 560001.",
+                "sanitized_text": "Applicant lives at <ADDRESS_1>.",
+                "outbound_payload": "Summarize: <ADDRESS_1>.",
+                "entities": [],
+                "provider": "stub",
+                "model": "stub-1",
+                "task": "summarize",
+                "latency_ms": 5,
+                "reinsertion": {"replaced": 0, "missing": [], "unknown": []},
+            }
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    app = run_upload_app(monkeypatch)
+    editor = next(item for item in app.text_area if item.key == "original_text")
+    assert editor.value == "Residential address: <NATIVE_1> <NATIVE_2>, Bengaluru 560001"
+    assert not any("\u0B80" <= ch <= "\u0BFF" for ch in editor.value)
+
+    next(button for button in app.button if button.label == "Run gateway").click().run()
+    assert not app.exception, app.exception
+
+    sent = calls["post"][0]["text"]
+    assert not any("\u0B80" <= ch <= "\u0BFF" for ch in sent)
+
+    final = next(item for item in app.text_area if item.label == "Final text")
+    assert final.value == "Applicant lives at வைஶாலி நகர், 560001."

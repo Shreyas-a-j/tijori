@@ -51,8 +51,8 @@ document ──► detect ──► mask ──► forward sanitized ──► r
   image; OCR and script detection run locally, and Tamil, Telugu, Kannada,
   Malayalam, Hindi, Marathi, Bengali, Gujarati, Punjabi or Odia text is
   translated to English on-device with NLLB-200 before the unchanged gateway
-  runs. Native-script uploads fail closed if translation is disabled or leaves
-  an untranslated word; see `docs/INGEST.md`.
+  runs. Untranslated names are masked locally as `<NATIVE_n>` and restored in
+  the answer; see `docs/INGEST.md`.
 - **Evaluation** — 50-document labelled dataset (English and Hindi-English),
   precision/recall, leakage sweep, reinsertion accuracy and latency baseline.
 
@@ -108,10 +108,10 @@ keep the adapter unchanged.
 Multilingual intake runs on-device and is enabled by default: NLLB-200 is
 loaded in the Streamlit process only, so no document text leaves the machine.
 `reports/multilingual.md` records zero gold-value leakage on the translated
-path. The translation validator tolerates native punctuation, digit glyphs and a
-single stray letter, but rejects any untranslated native-script word, and
-`TIJORI_TRANSLATE_ENABLED=0` is the kill switch that refuses native-script
-uploads entirely.
+path. Names NLLB leaves in the source script are swapped for local `<NATIVE_n>`
+placeholders before the gateway runs and restored in the finished answer, so the
+model never receives native characters. `TIJORI_TRANSLATE_ENABLED=0` is the kill
+switch that refuses native-script uploads entirely.
 
 ## API
 

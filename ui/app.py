@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
 
 from ingest.extract import ExtractionError, extract  # noqa: E402
 from ingest.language import detect_language  # noqa: E402
+from ingest.native import mask_native_spans, restore_native_spans  # noqa: E402
 from ingest.translate import TranslationUnavailable, translate_to_english  # noqa: E402
 
 DATASET_PATH = ROOT / "data" / "dataset.jsonl"
@@ -87,10 +88,15 @@ def ingest_upload(filename: str, data: bytes) -> dict:
     extraction = extract(filename, data)
     detected = detect_language(extraction.text)
     translation = translate_to_english(extraction.text, detected)
+    # NLLB leaves proper nouns in the source script; swap them for local
+    # placeholders so no native characters reach the gateway.
+    masked_text, native_map = mask_native_spans(translation.text)
     return {
         "extraction": extraction,
         "detected": detected,
         "translation": translation,
+        "masked_text": masked_text,
+        "native_map": native_map,
     }
 
 
@@ -230,7 +236,10 @@ def show_result(result: dict, submitted_text: str, instruction: str) -> None:
         st.subheader("C. Final response")
         st.text_area(
             "Final text",
-            value=result.get("final_text") or "",
+            value=restore_native_spans(
+                result.get("final_text") or "",
+                st.session_state.get("native_map") or {},
+            ),
             height=360,
             disabled=True,
             label_visibility="collapsed",
@@ -284,6 +293,8 @@ if "upload_warnings" not in st.session_state:
     st.session_state.upload_warnings = []
 if "upload_error" not in st.session_state:
     st.session_state.upload_error = ""
+if "native_map" not in st.session_state:
+    st.session_state.native_map = {}
 
 with st.sidebar:
     st.subheader("Gateway")
@@ -319,6 +330,7 @@ with st.sidebar:
             st.session_state.upload_original = ""
             st.session_state.upload_meta = None
             st.session_state.upload_warnings = []
+            st.session_state.native_map = {}
             st.session_state.source_lang = "en"
             st.session_state.pop("result", None)
             with st.spinner("Extracting and translating on-device…"):
@@ -339,7 +351,8 @@ with st.sidebar:
                     extraction = outcome["extraction"]
                     detected = outcome["detected"]
                     translation = outcome["translation"]
-                    st.session_state.original_text = translation.text
+                    st.session_state.original_text = outcome["masked_text"]
+                    st.session_state.native_map = outcome["native_map"]
                     st.session_state.source_lang = detected.code
                     st.session_state.upload_original = extraction.text
                     st.session_state.upload_meta = {
@@ -384,6 +397,7 @@ with st.sidebar:
             st.session_state.upload_error = ""
             st.session_state.translation_state = "ok"
             st.session_state.source_lang = "en"
+            st.session_state.native_map = {}
             st.session_state.pop("result", None)
     else:
         st.caption("data/dataset.jsonl not found — using the built-in sample.")

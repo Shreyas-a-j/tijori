@@ -29,6 +29,7 @@ import httpx
 
 from ingest.extract import ExtractionError, extract
 from ingest.language import detect_language
+from ingest.native import mask_native_spans
 from ingest.translate import TranslationUnavailable, translate_text, translate_to_english
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -140,6 +141,7 @@ def evaluate_document(
             "leakage": 0,
             "numeric_total": 0,
             "numeric_detected": 0,
+            "native_spans": 0,
             "error": "",
         }
         try:
@@ -159,6 +161,11 @@ def evaluate_document(
             if not back.text.strip() or not _LATIN_RE.search(back.text):
                 raise ValueError("back-translation is empty or not Latin script")
 
+            # Same treatment the UI applies: names NLLB could not convert are
+            # replaced with local placeholders, never forwarded as native text.
+            masked_text, native_map = mask_native_spans(back.text)
+            row["native_spans"] = len(native_map)
+
             back_digits = set(digit_sequences(back.text))
             row["digits_preserved"] = sum(
                 1 for digits in source_digits if digits in back_digits
@@ -168,7 +175,7 @@ def evaluate_document(
             response = httpx.post(
                 f"{api_url}/v1/sanitize",
                 json={
-                    "text": back.text,
+                    "text": masked_text,
                     "doc_type": document.get("doc_type", "other"),
                     "source_lang": code,
                 },
@@ -193,8 +200,10 @@ def evaluate_document(
                         }
                     )
 
+            # Entity offsets index the text that was actually sent, which has
+            # native runs replaced by placeholders.
             detected_values = [
-                back.text[entity.get("start", 0) : entity.get("end", 0)]
+                masked_text[entity.get("start", 0) : entity.get("end", 0)]
                 for entity in payload.get("entities", [])
                 if isinstance(entity.get("start"), int) and isinstance(entity.get("end"), int)
             ]
@@ -235,7 +244,10 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
         "",
         "The English dataset text is translated to each target language, passed",
         "through the local extractor and script detector, translated back to",
-        "English, and then sent to `/v1/sanitize`. The report measures translation",
+        "English, and then sent to `/v1/sanitize`. Surviving native-script runs",
+        "(names and address words NLLB will not transliterate) are replaced with",
+        "local `<NATIVE_n>` placeholders first, exactly as the UI does, so no",
+        "native characters reach the gateway. The report measures translation",
         "survival, digit preservation, leakage on the translated path, and recall",
         "for numeric identifiers whose digits survived translation.",
         "",
@@ -257,6 +269,7 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
         leakage = sum(row["leakage"] for row in language_rows)
         numeric_total = sum(row["numeric_total"] for row in language_rows)
         numeric_detected = sum(row["numeric_detected"] for row in language_rows)
+        native_spans = sum(row.get("native_spans", 0) for row in language_rows)
         table_rows.append(
             [
                 script,
@@ -265,6 +278,7 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
                 _pct(digits_preserved, digits_total),
                 leakage,
                 _pct(numeric_detected, numeric_total),
+                native_spans,
             ]
         )
 
@@ -277,6 +291,7 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
                 "Digit preservation",
                 "Leakage",
                 "Numeric-ID recall",
+                "Native spans masked",
             ],
             table_rows,
         )
@@ -290,6 +305,7 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
     total_leakage = sum(row["leakage"] for row in rows)
     total_numeric = sum(row["numeric_total"] for row in rows)
     total_detected = sum(row["numeric_detected"] for row in rows)
+    total_native = sum(row.get("native_spans", 0) for row in rows)
 
     lines.extend(
         [
@@ -302,6 +318,7 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
                     ["Digit-preservation rate", _pct(total_preserved, total_digits)],
                     ["Leakage count on translated path", total_leakage],
                     ["Numeric-ID recall", _pct(total_detected, total_numeric)],
+                    ["Native-script spans masked locally", total_native],
                 ],
             ),
             "",
@@ -373,6 +390,10 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
             "  translation. Those are translation failures, not detector misses.",
             "- Native-language answers (back-translation of the model output) are",
             "  out of scope; see `docs/INGEST.md`.",
+            "- Surviving native-script runs are replaced with local `<NATIVE_n>`",
+            "  placeholders before the gateway runs. The model cannot read or",
+            "  summarise those spans; it can only repeat the placeholder, which the",
+            "  UI restores locally.",
             "",
         ]
     )
