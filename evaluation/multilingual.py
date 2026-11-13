@@ -16,6 +16,7 @@ Honesty rules:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -99,14 +100,36 @@ def _pct(numerator: int, denominator: int) -> str:
     return "—" if denominator == 0 else f"{100 * numerator / denominator:.1f}%"
 
 
-def evaluate_document(document: dict, api_url: str) -> list[dict]:
+def _sanitized_excerpt(payload: str, entity: dict, radius: int = 45) -> str:
+    value = entity.get("text", "")
+    variants = [value]
+    if entity.get("type") == "AADHAAR":
+        variants.append(re.sub(r"[\s-]", "", value))
+    for variant in variants:
+        if not variant:
+            continue
+        haystack = payload if variant.isdigit() else payload.casefold()
+        needle = variant if variant.isdigit() else variant.casefold()
+        position = haystack.find(needle)
+        if position >= 0:
+            start = max(0, position - radius)
+            end = min(len(payload), position + len(variant) + radius)
+            return " ".join(payload[start:end].split())
+    return ""
+
+
+def evaluate_document(
+    document: dict,
+    api_url: str,
+    targets: tuple[tuple[str, str, str], ...] = TARGETS,
+) -> list[dict]:
     """Run one document through all target languages."""
 
     results: list[dict] = []
     source_text = document["text"]
     source_digits = digit_sequences(source_text)
 
-    for code, nllb, script in TARGETS:
+    for code, nllb, script in targets:
         row = {
             "doc_id": document["id"],
             "language": script,
@@ -156,7 +179,19 @@ def evaluate_document(document: dict, api_url: str) -> list[dict]:
             sanitized = payload.get("sanitized_text", "")
 
             for entity in document.get("entities", []):
-                row["leakage"] += leak_occurrences(entity, sanitized)
+                occurrences = leak_occurrences(entity, sanitized)
+                row["leakage"] += occurrences
+                if occurrences:
+                    row.setdefault("leak_details", []).append(
+                        {
+                            "document": document["id"],
+                            "language": script,
+                            "type": entity.get("type", ""),
+                            "value": entity.get("text", ""),
+                            "occurrences": occurrences,
+                            "excerpt": _sanitized_excerpt(sanitized, entity),
+                        }
+                    )
 
             detected_values = [
                 back.text[entity.get("start", 0) : entity.get("end", 0)]
@@ -285,6 +320,41 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
         )
     lines.append("")
 
+    leak_details = [
+        detail
+        for row in rows
+        for detail in row.get("leak_details", [])
+    ]
+    if leak_details:
+        lines.extend(
+            [
+                "## Leak detail",
+                "",
+                _md_table(
+                    [
+                        "Document",
+                        "Language",
+                        "Type",
+                        "Value",
+                        "Occurrences",
+                        "Sanitized context excerpt",
+                    ],
+                    [
+                        [
+                            detail["document"],
+                            detail["language"],
+                            detail["type"],
+                            detail["value"],
+                            detail["occurrences"],
+                            detail["excerpt"],
+                        ]
+                        for detail in leak_details
+                    ],
+                ),
+                "",
+            ]
+        )
+
     errors = [row for row in rows if row["error"]]
     if errors:
         lines.extend(["## Errors", "", _md_table(["Document", "Language", "Error"], [
@@ -309,8 +379,54 @@ def render_report(rows: list[dict], documents: int, gateway_ok: bool) -> str:
     return "\n".join(lines)
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--docs",
+        nargs="+",
+        help="document ids to evaluate (space- or comma-separated)",
+    )
+    parser.add_argument(
+        "--langs",
+        nargs="+",
+        help="language codes or names to evaluate (space- or comma-separated)",
+    )
+    parser.add_argument("--limit", type=int, default=DOC_COUNT)
+    return parser.parse_args()
+
+
+def _selected(values: list[str] | None) -> set[str] | None:
+    if not values:
+        return None
+    return {
+        item.strip().casefold()
+        for value in values
+        for item in value.split(",")
+        if item.strip()
+    }
+
+
 def main() -> int:
-    documents = load_documents()
+    args = _parse_args()
+    documents = load_documents(limit=args.limit)
+    selected_docs = _selected(args.docs)
+    selected_langs = _selected(args.langs)
+    if selected_docs is not None:
+        documents = [
+            document
+            for document in documents
+            if document["id"].casefold() in selected_docs
+        ]
+    targets = tuple(
+        target
+        for target in TARGETS
+        if selected_langs is None
+        or target[0].casefold() in selected_langs
+        or target[2].casefold() in selected_langs
+    )
+    if not targets:
+        print(f"no known target languages in {args.langs!r}", file=sys.stderr)
+        return 2
     if not documents:
         print("no documents found", file=sys.stderr)
         return 2
@@ -333,7 +449,7 @@ def main() -> int:
     rows: list[dict] = []
     for index, document in enumerate(documents, start=1):
         print(f"[{index}/{len(documents)}] {document['id']}", file=sys.stderr)
-        rows.extend(evaluate_document(document, DEFAULT_API_URL))
+        rows.extend(evaluate_document(document, DEFAULT_API_URL, targets))
 
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(render_report(rows, len(documents), gateway_ok=True), encoding="utf-8")

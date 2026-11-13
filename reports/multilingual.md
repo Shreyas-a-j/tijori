@@ -1,7 +1,7 @@
 # Multilingual intake evaluation
 
-- Generated: 2026-11-12T21:05:15+00:00
-- Commit: `db1978a`
+- Generated: 2026-11-13T01:39:45+00:00
+- Commit: `54e18be`
 - Documents: 10
 - Target languages: Tamil, Telugu, Kannada, Hindi
 - Translation model: `facebook/nllb-200-distilled-600M` (CPU, on-device)
@@ -23,39 +23,33 @@ dishonest.
 
 | Language | Attempts | Translation success | Digit preservation | Leakage | Numeric-ID recall |
 |---|---|---|---|---|---|
-| Tamil | 10 | 20.0% | 17.4% | 3 | 83.3% |
-| Telugu | 10 | 80.0% | 74.9% | 5 | 100.0% |
-| Kannada | 10 | 50.0% | 47.9% | 11 | 85.7% |
-| Hindi | 10 | 100.0% | 92.8% | 12 | 65.5% |
+| Tamil | 10 | 60.0% | 47.9% | 0 | 93.8% |
+| Telugu | 10 | 90.0% | 83.8% | 0 | 100.0% |
+| Kannada | 10 | 60.0% | 57.5% | 0 | 94.1% |
+| Hindi | 10 | 100.0% | 92.8% | 0 | 100.0% |
 
 ## Overall
 
 | Metric | Result |
 |---|---|
-| Translation success rate | 62.5% |
-| Digit-preservation rate | 58.2% |
-| Leakage count on translated path | 31 |
-| Numeric-ID recall | 81.9% |
+| Translation success rate | 77.5% |
+| Digit-preservation rate | 70.5% |
+| Leakage count on translated path | 0 |
+| Numeric-ID recall | 97.7% |
 
-**FAIL:** 31 gold value occurrence(s) survived into the sanitized translated text. Investigate before shipping.
+**Leakage gate:** 0 gold value occurrences in the sanitized translated text. This is the required result for the slice.
 
 ## Errors
 
 | Document | Language | Error |
 |---|---|---|
-| loan_001 | Telugu | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_003 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_003 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_004 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_004 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_005 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_005 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_006 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_006 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_007 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_008 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_008 | Telugu | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_009 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_010 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 | loan_010 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 
