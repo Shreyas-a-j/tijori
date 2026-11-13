@@ -110,8 +110,9 @@ def test_import_failure_maps_to_translation_unavailable(monkeypatch):
 def test_disabled_translation_blocks_indic_but_not_english(monkeypatch):
     monkeypatch.setenv("TIJORI_TRANSLATE_ENABLED", "0")
 
-    with pytest.raises(TranslationUnavailable, match="disabled"):
+    with pytest.raises(TranslationUnavailable, match="disabled") as excinfo:
         translate_to_english("வணக்கம்", TAMIL)
+    assert "refusing to forward" not in str(excinfo.value)
 
     result = translate_to_english("Hello", ENGLISH)
     assert result.text == "Hello"
@@ -125,12 +126,17 @@ def test_empty_translation_maps_to_unavailable(monkeypatch):
         translate_to_english("வணக்கம்", TAMIL)
 
 
-def test_native_script_left_in_translation_fails_closed(monkeypatch):
+def test_native_script_left_in_translation_is_returned_for_local_masking(monkeypatch):
     fake_model(monkeypatch)
-    monkeypatch.setattr(translate_module, "_translate_chunk", lambda *args, **kwargs: "வணக்கம்")
+    monkeypatch.setattr(
+        translate_module, "_translate_chunk", lambda *args, **kwargs: "My name is வணக்கம்"
+    )
 
-    with pytest.raises(TranslationUnavailable, match="native-script"):
-        translate_to_english("வணக்கம்", TAMIL)
+    result = translate_to_english("வணக்கம்", TAMIL)
+
+    # The UI replaces the surviving native run with <NATIVE_1>; translation
+    # itself no longer refuses, because names legitimately stay in source script.
+    assert result.text == "My name is வணக்கம்"
 
 
 def test_native_script_validator_ignores_punctuation_and_digits():

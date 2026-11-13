@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 
 from app.config import get_translate_enabled, get_translate_model
-from ingest.language import DetectedLanguage, contains_supported_non_latin_script
+from ingest.language import DetectedLanguage
 
 #: Character budget per NLLB chunk. 512 tokens is the model limit; Indic text
 #: is roughly 2-3 characters per token, so this leaves headroom.
@@ -59,8 +59,7 @@ def translate_to_english(text: str, detected: DetectedLanguage) -> Translation:
 
     if not get_translate_enabled():
         raise TranslationUnavailable(
-            "on-device translation is disabled (TIJORI_TRANSLATE_ENABLED=0); "
-            "refusing to forward un-translated text"
+            "on-device translation is disabled (TIJORI_TRANSLATE_ENABLED=0)"
         )
 
     model_name = get_translate_model()
@@ -78,11 +77,6 @@ def translate_to_english(text: str, detected: DetectedLanguage) -> Translation:
 
     if not translated.strip():
         raise TranslationUnavailable("on-device translation returned empty text")
-    if contains_supported_non_latin_script(translated):
-        raise TranslationUnavailable(
-            "on-device translation left native-script text in its output; "
-            "refusing to forward it"
-        )
 
     duration_ms = int((time.perf_counter() - started) * 1000)
     return Translation(

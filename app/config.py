@@ -8,6 +8,33 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_env_file(path: Path) -> None:
+    """Populate ``os.environ`` from a ``KEY=VALUE`` file (stdlib only).
+
+    Values already present in the real environment win, so an exported variable
+    always overrides the file. Set ``TIJORI_DISABLE_DOTENV=1`` to skip loading
+    entirely, which keeps the test suite hermetic.
+    """
+
+    if os.getenv("TIJORI_DISABLE_DOTENV") or not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        os.environ[key] = value.strip().strip('"').strip("'")
+
+
+_load_env_file(ROOT / ".env")
 
 
 def _env(name: str, default: str) -> str:
@@ -36,7 +63,7 @@ class Settings:
     translate_model: str = _env(
         "TIJORI_TRANSLATE_MODEL", "facebook/nllb-200-distilled-600M"
     )
-    translate_enabled: bool = _env("TIJORI_TRANSLATE_ENABLED", "0").strip().lower() not in {
+    translate_enabled: bool = _env("TIJORI_TRANSLATE_ENABLED", "1").strip().lower() not in {
         "0",
         "false",
         "no",
@@ -53,7 +80,7 @@ def get_translate_model() -> str:
 def get_translate_enabled() -> bool:
     """Read the kill switch dynamically (TIJORI_TRANSLATE_ENABLED=0)."""
 
-    return _env("TIJORI_TRANSLATE_ENABLED", "0").strip().lower() not in {
+    return _env("TIJORI_TRANSLATE_ENABLED", "1").strip().lower() not in {
         "0",
         "false",
         "no",

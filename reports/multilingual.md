@@ -1,7 +1,7 @@
 # Multilingual intake evaluation
 
-- Generated: 2026-11-13T01:39:45+00:00
-- Commit: `54e18be`
+- Generated: 2026-11-13T03:01:29+00:00
+- Commit: `1c0040b`
 - Documents: 10
 - Target languages: Tamil, Telugu, Kannada, Hindi
 - Translation model: `facebook/nllb-200-distilled-600M` (CPU, on-device)
@@ -11,7 +11,10 @@
 
 The English dataset text is translated to each target language, passed
 through the local extractor and script detector, translated back to
-English, and then sent to `/v1/sanitize`. The report measures translation
+English, and then sent to `/v1/sanitize`. Surviving native-script runs
+(names and address words NLLB will not transliterate) are replaced with
+local `<NATIVE_n>` placeholders first, exactly as the UI does, so no
+native characters reach the gateway. The report measures translation
 survival, digit preservation, leakage on the translated path, and recall
 for numeric identifiers whose digits survived translation.
 
@@ -21,37 +24,24 @@ dishonest.
 
 ## Per-language results
 
-| Language | Attempts | Translation success | Digit preservation | Leakage | Numeric-ID recall |
-|---|---|---|---|---|---|
-| Tamil | 10 | 60.0% | 47.9% | 0 | 93.8% |
-| Telugu | 10 | 90.0% | 83.8% | 0 | 100.0% |
-| Kannada | 10 | 60.0% | 57.5% | 0 | 94.1% |
-| Hindi | 10 | 100.0% | 92.8% | 0 | 100.0% |
+| Language | Attempts | Translation success | Digit preservation | Leakage | Numeric-ID recall | Native spans masked |
+|---|---|---|---|---|---|---|
+| Tamil | 10 | 100.0% | 80.8% | 0 | 92.3% | 30 |
+| Telugu | 10 | 100.0% | 94.0% | 0 | 100.0% | 5 |
+| Kannada | 10 | 100.0% | 96.4% | 0 | 92.9% | 20 |
+| Hindi | 10 | 100.0% | 92.8% | 0 | 100.0% | 0 |
 
 ## Overall
 
 | Metric | Result |
 |---|---|
-| Translation success rate | 77.5% |
-| Digit-preservation rate | 70.5% |
+| Translation success rate | 100.0% |
+| Digit-preservation rate | 91.0% |
 | Leakage count on translated path | 0 |
-| Numeric-ID recall | 97.7% |
+| Numeric-ID recall | 96.4% |
+| Native-script spans masked locally | 55 |
 
 **Leakage gate:** 0 gold value occurrences in the sanitized translated text. This is the required result for the slice.
-
-## Errors
-
-| Document | Language | Error |
-|---|---|---|
-| loan_003 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_004 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_004 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_006 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_006 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_008 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_008 | Telugu | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_010 | Tamil | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
-| loan_010 | Kannada | TranslationUnavailable: on-device translation left native-script text in its output; refusing to forward it |
 
 ## Caveats
 
@@ -63,3 +53,7 @@ dishonest.
   translation. Those are translation failures, not detector misses.
 - Native-language answers (back-translation of the model output) are
   out of scope; see `docs/INGEST.md`.
+- Surviving native-script runs are replaced with local `<NATIVE_n>`
+  placeholders before the gateway runs. The model cannot read or
+  summarise those spans; it can only repeat the placeholder, which the
+  UI restores locally.

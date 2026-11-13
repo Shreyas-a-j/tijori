@@ -35,6 +35,11 @@ _LATIN_RANGES: tuple[tuple[int, int], ...] = (
     (0x00C0, 0x024F),
 )
 
+#: Flattened Unicode ranges for every supported native script.
+NATIVE_RANGES: tuple[tuple[int, int], ...] = tuple(
+    bounds for _script, _code, _nllb, _tesseract, ranges in _SCRIPTS for bounds in ranges
+)
+
 @dataclass(frozen=True)
 class DetectedLanguage:
     code: str

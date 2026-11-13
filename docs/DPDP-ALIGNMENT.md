@@ -88,11 +88,12 @@ themselves; treat them as confidential business records.
 
 Multilingual intake (OCR and NLLB translation) runs entirely on-device, so it
 introduces no new data processor, and extracted or translated text is held in
-memory only and never persisted. The path is opt-in
-(`TIJORI_TRANSLATE_ENABLED=0` by default) until the multilingual leakage report
-reaches zero. Translation validation tolerates native punctuation, digit glyphs
-and a single stray letter, but rejects any untranslated native-script word;
-native-script uploads fail closed when disabled or when validation fails.
+memory only and never persisted. Translation is enabled by default;
+`TIJORI_TRANSLATE_ENABLED=0` is the kill switch that refuses native-script
+uploads. Names that machine translation leaves in the source script are replaced
+with local `<NATIVE_n>` placeholders before the gateway runs and restored in the
+finished answer, so the model never receives native characters and no new
+processor or transfer is introduced.
 
 ## Verification commands
 
