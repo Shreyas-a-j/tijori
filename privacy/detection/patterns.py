@@ -12,7 +12,7 @@ import re
 from app.contracts import DetectedEntity, EntityType
 
 _ADDR_RE = re.compile(
-    r"(?:Residential\s+address|Current\s+address|Permanent\s+address|Address|Pata)\s*:\s*([^\n\r]+)",
+    r"(?:Residential\s+address|Current\s+address|Permanent\s+address|Address|Pata|Location)\s*:\s*([^\n\r]+)",
     re.IGNORECASE,
 )
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
