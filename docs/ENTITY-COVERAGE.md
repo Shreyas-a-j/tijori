@@ -24,9 +24,9 @@ is under our control.
 
 | Presidio entity | Tijori type | Recognizer | Validation | Status |
 |---|---|---|---|---|
-| `IN_AADHAAR` | `AADHAAR` | 12 digits with optional spaces/hyphens, context-gated | First digit 2–9, Verhoeff checksum, non-palindrome | **Covered** |
+| `IN_AADHAAR` | `AADHAAR` | 12 digits with optional spaces/hyphens; context-gated unless the grouped form passes the checksum | First digit 2–9, Verhoeff checksum, non-palindrome | **Covered** |
 | `IN_PAN` | `PAN` | `[A-Z]{5}[0-9]{4}[A-Z]`, context-gated | Format + context | **Covered** |
-| `IN_GSTIN` | `GSTIN` | 15 chars: state code + PAN + entity + `Z` + check char | Format + state/PAN structure + checksum | **Covered** |
+| `IN_GSTIN` | `GSTIN` | 15 chars: state code + PAN + entity + `Z` + check char; accepts a single space after the state code | Format + state/PAN structure + checksum | **Covered** |
 | `IN_VOTER` | `VOTER_ID` | EPIC: 3 letters + 7 digits, context-gated | Format + context | **Covered** |
 | `IN_PASSPORT` | `PASSPORT` | 1 letter + 7 digits, context-gated | Format + context | **Covered** |
 | `IN_VEHICLE_REGISTRATION` | — | — | — | **Gap** |
