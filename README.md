@@ -47,7 +47,7 @@ document ──► detect ──► mask ──► forward sanitized ──► r
   records; no document text is ever logged.
 - **Demo UI** — Streamlit three-pane view (input, outbound payload, final
   response) with a custom instruction field and an audit browser.
-- **Multilingual intake (opt-in)** — upload txt, md, csv, docx, pdf or a scanned
+- **Multilingual intake** — upload txt, md, csv, docx, pdf or a scanned
   image; OCR and script detection run locally, and Tamil, Telugu, Kannada,
   Malayalam, Hindi, Marathi, Bengali, Gujarati, Punjabi or Odia text is
   translated to English on-device with NLLB-200 before the unchanged gateway
@@ -97,20 +97,21 @@ key and retention window, which are re-read per request).
 | `TIJORI_API_URL` | `http://127.0.0.1:8000` | Gateway URL used by the UI |
 | `TIJORI_MAX_INPUT_CHARS` | `100000` | Request size limit |
 | `TIJORI_LOG_LEVEL` | `INFO` | Log verbosity |
-| `TIJORI_TRANSLATE_ENABLED` | `0` | Opt-in local Indic translation; disabled path refuses native-script uploads |
 | `TIJORI_API_KEY` | *(empty)* | Enables `X-API-Key` auth on `/v1/*` |
 | `TIJORI_AUDIT_RETENTION_DAYS` | `365` | Audit retention window |
 | `TIJORI_TRANSLATE_MODEL` | `facebook/nllb-200-distilled-600M` | On-device NLLB model for uploads |
-| `TIJORI_TRANSLATE_ENABLED` | `1` | Set `0` to refuse native-script uploads |
+| `TIJORI_TRANSLATE_ENABLED` | `1` | On-device Indic translation; set `0` to refuse native-script uploads |
 
 To use an external provider, change only the three `TIJORI_LLM_*` values and
 keep the adapter unchanged.
 
-Multilingual intake is deliberately disabled by default. Set
-`TIJORI_TRANSLATE_ENABLED=1` only after `reports/multilingual.md` reports zero
-gold-value leakage. The translation validator tolerates native punctuation,
-digit glyphs and a single stray letter, but rejects any untranslated
-native-script word.
+Multilingual intake runs on-device and is enabled by default: NLLB-200 is
+loaded in the Streamlit process only, so no document text leaves the machine.
+`reports/multilingual.md` records zero gold-value leakage on the translated
+path. The translation validator tolerates native punctuation, digit glyphs and a
+single stray letter, but rejects any untranslated native-script word, and
+`TIJORI_TRANSLATE_ENABLED=0` is the kill switch that refuses native-script
+uploads entirely.
 
 ## API
 

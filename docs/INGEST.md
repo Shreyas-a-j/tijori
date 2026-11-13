@@ -75,11 +75,12 @@ Configuration (see `.env.example`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `TIJORI_TRANSLATE_MODEL` | `facebook/nllb-200-distilled-600M` | NLLB model id |
-| `TIJORI_TRANSLATE_ENABLED` | `0` | Set `1` to opt in after the leakage report reaches zero |
+| `TIJORI_TRANSLATE_ENABLED` | `1` | Set `0` to disable translation and refuse native-script uploads |
 
-Translation is opt-in until `reports/multilingual.md` reaches zero leakage.
-`TIJORI_TRANSLATE_ENABLED=0` is the fail-closed default: native-script uploads
-are refused with a clear message, while English uploads continue to work.
+Translation is on by default: NLLB runs inside the Streamlit process, never in
+the gateway, and no text leaves the machine. `TIJORI_TRANSLATE_ENABLED=0` is the
+fail-closed switch: native-script uploads are then refused with a clear message,
+while English uploads continue to work.
 
 ## OCR installation
 

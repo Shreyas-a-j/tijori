@@ -305,8 +305,8 @@ with st.sidebar:
         ),
     )
     st.caption(
-        "Multilingual intake is opt-in. Native-script uploads are refused unless "
-        "TIJORI_TRANSLATE_ENABLED=1 is set and the leakage report is clean."
+        "Indic uploads are translated to English on-device before the gateway "
+        "runs. Set TIJORI_TRANSLATE_ENABLED=0 to refuse them instead."
     )
     if uploaded is not None:
         identity = upload_identity(uploaded)
@@ -361,8 +361,8 @@ with st.sidebar:
         st.error(st.session_state.upload_error)
         if "TIJORI_TRANSLATE_ENABLED=0" in st.session_state.upload_error:
             st.info(
-                "Enable on-device translation for this session: "
-                "`TIJORI_TRANSLATE_ENABLED=1 make ui`"
+                "Translation is switched off for this session. Restart the UI with "
+                "`TIJORI_TRANSLATE_ENABLED=1` (or remove the `0` from `.env`)."
             )
 
     st.subheader("Document")

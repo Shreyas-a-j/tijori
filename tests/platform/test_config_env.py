@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from app.config import _load_env_file
+from app.config import _load_env_file, get_translate_enabled
 
 
 def test_env_file_sets_missing_keys(tmp_path: Path, monkeypatch) -> None:
@@ -51,3 +51,15 @@ def test_disable_switch_skips_loading(tmp_path: Path, monkeypatch) -> None:
     _load_env_file(path)
 
     assert "TIJORI_TEST_DOTENV_D" not in os.environ
+
+
+def test_translation_is_enabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("TIJORI_TRANSLATE_ENABLED", raising=False)
+
+    assert get_translate_enabled() is True
+
+
+def test_translation_kill_switch(monkeypatch) -> None:
+    monkeypatch.setenv("TIJORI_TRANSLATE_ENABLED", "0")
+
+    assert get_translate_enabled() is False
