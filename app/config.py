@@ -36,7 +36,7 @@ class Settings:
     translate_model: str = _env(
         "TIJORI_TRANSLATE_MODEL", "facebook/nllb-200-distilled-600M"
     )
-    translate_enabled: bool = _env("TIJORI_TRANSLATE_ENABLED", "1").strip().lower() not in {
+    translate_enabled: bool = _env("TIJORI_TRANSLATE_ENABLED", "0").strip().lower() not in {
         "0",
         "false",
         "no",
@@ -53,7 +53,7 @@ def get_translate_model() -> str:
 def get_translate_enabled() -> bool:
     """Read the kill switch dynamically (TIJORI_TRANSLATE_ENABLED=0)."""
 
-    return _env("TIJORI_TRANSLATE_ENABLED", "1").strip().lower() not in {
+    return _env("TIJORI_TRANSLATE_ENABLED", "0").strip().lower() not in {
         "0",
         "false",
         "no",

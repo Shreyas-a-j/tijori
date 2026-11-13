@@ -75,10 +75,11 @@ Configuration (see `.env.example`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `TIJORI_TRANSLATE_MODEL` | `facebook/nllb-200-distilled-600M` | NLLB model id |
-| `TIJORI_TRANSLATE_ENABLED` | `1` | Set `0` to disable translation |
+| `TIJORI_TRANSLATE_ENABLED` | `0` | Set `1` to opt in after the leakage report reaches zero |
 
-`TIJORI_TRANSLATE_ENABLED=0` is the fail-closed switch: native-script uploads
-are refused, while English uploads continue to work.
+Translation is opt-in until `reports/multilingual.md` reaches zero leakage.
+`TIJORI_TRANSLATE_ENABLED=0` is the fail-closed default: native-script uploads
+are refused with a clear message, while English uploads continue to work.
 
 ## OCR installation
 
@@ -110,6 +111,10 @@ detection runs on the OCR output.
   failed, the UI refuses to run the gateway. Forwarding native-script text
   would let detection miss native-script identifiers and turn the request into
   a silent leak.
+- **Translation validation.** The output is rejected when any native-script
+  word (two or more native letters) survives. Native punctuation, dashes, digit
+  glyphs and a single stray letter do not fail validation; genuinely
+  untranslated native text still fails closed.
 - **Audit metadata.** `source_lang` records the original document language. The
   audit row still contains no document text and no placeholder mapping. Old
   databases are migrated additively with `ALTER TABLE … ADD COLUMN` and default

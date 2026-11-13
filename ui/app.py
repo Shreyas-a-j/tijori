@@ -36,7 +36,8 @@ DOC_TYPES = ("kyc", "loan_application", "support_ticket", "insurance_claim", "ot
 UPLOAD_TYPES = ["txt", "md", "csv", "docx", "pdf", "png", "jpg", "jpeg", "tif", "tiff"]
 TRANSLATION_BLOCKED = (
     "Translation unavailable — refusing to send un-translated native-script text "
-    "to the gateway."
+    "to the gateway. Multilingual intake is opt-in; set "
+    "TIJORI_TRANSLATE_ENABLED=1 only after the leakage report is clean."
 )
 #: Same wording the evaluation harness uses, so the demo matches `reports/metrics.md`.
 #: "Do not copy the document" made qwen2.5:3b drop 9 of 10 placeholders on loan_001
@@ -303,6 +304,10 @@ with st.sidebar:
             "Text, Markdown, CSV, DOCX, PDF or a scanned image. Extraction and "
             "translation run on this machine; the English text is placed in the editor."
         ),
+    )
+    st.caption(
+        "Multilingual intake is opt-in. Native-script uploads are refused unless "
+        "TIJORI_TRANSLATE_ENABLED=1 is set and the leakage report is clean."
     )
     if uploaded is not None:
         identity = upload_identity(uploaded)

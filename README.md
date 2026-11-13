@@ -21,7 +21,9 @@ document ──► detect ──► mask ──► forward sanitized ──► r
 ## Capabilities
 
 - **Detection** — Microsoft Presidio with custom India recognisers (Aadhaar with
-  Verhoeff checksum, PAN, GSTIN, Voter EPIC, Passport, each context-gated) plus
+  Verhoeff checksum, PAN, GSTIN with a mod-36 checksum, Voter EPIC, Passport;
+  context-gated, and checksum-valid Aadhaar/GSTIN are recognised even when a
+  translated label is missing) plus
   regex patterns for phone, email, date of birth, bank accounts and cards, and
   GLiNER (`urchade/gliner_multi_pii-v1`) with spaCy `en_core_web_sm` for people
   and addresses. Overlapping spans are resolved deterministically; detection
@@ -45,12 +47,12 @@ document ──► detect ──► mask ──► forward sanitized ──► r
   records; no document text is ever logged.
 - **Demo UI** — Streamlit three-pane view (input, outbound payload, final
   response) with a custom instruction field and an audit browser.
-- **Multilingual intake** — upload txt, md, csv, docx, pdf or a scanned image;
-  OCR and script detection run locally, and Tamil, Telugu, Kannada, Malayalam,
-  Hindi, Marathi, Bengali, Gujarati, Punjabi or Odia text is translated to
-  English on-device with NLLB-200 before the unchanged gateway runs. A
-  native-script upload is refused if translation is unavailable. See
-  `docs/INGEST.md`.
+- **Multilingual intake (opt-in)** — upload txt, md, csv, docx, pdf or a scanned
+  image; OCR and script detection run locally, and Tamil, Telugu, Kannada,
+  Malayalam, Hindi, Marathi, Bengali, Gujarati, Punjabi or Odia text is
+  translated to English on-device with NLLB-200 before the unchanged gateway
+  runs. Native-script uploads fail closed if translation is disabled or leaves
+  an untranslated word; see `docs/INGEST.md`.
 - **Evaluation** — 50-document labelled dataset (English and Hindi-English),
   precision/recall, leakage sweep, reinsertion accuracy and latency baseline.
 
@@ -95,6 +97,7 @@ key and retention window, which are re-read per request).
 | `TIJORI_API_URL` | `http://127.0.0.1:8000` | Gateway URL used by the UI |
 | `TIJORI_MAX_INPUT_CHARS` | `100000` | Request size limit |
 | `TIJORI_LOG_LEVEL` | `INFO` | Log verbosity |
+| `TIJORI_TRANSLATE_ENABLED` | `0` | Opt-in local Indic translation; disabled path refuses native-script uploads |
 | `TIJORI_API_KEY` | *(empty)* | Enables `X-API-Key` auth on `/v1/*` |
 | `TIJORI_AUDIT_RETENTION_DAYS` | `365` | Audit retention window |
 | `TIJORI_TRANSLATE_MODEL` | `facebook/nllb-200-distilled-600M` | On-device NLLB model for uploads |
@@ -102,6 +105,12 @@ key and retention window, which are re-read per request).
 
 To use an external provider, change only the three `TIJORI_LLM_*` values and
 keep the adapter unchanged.
+
+Multilingual intake is deliberately disabled by default. Set
+`TIJORI_TRANSLATE_ENABLED=1` only after `reports/multilingual.md` reports zero
+gold-value leakage. The translation validator tolerates native punctuation,
+digit glyphs and a single stray letter, but rejects any untranslated
+native-script word.
 
 ## API
 

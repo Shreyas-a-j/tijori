@@ -12,6 +12,7 @@ a different model and is out of scope.
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 
 #: Script name, ISO code, NLLB code, Tesseract code, Unicode ranges.
@@ -56,14 +57,35 @@ def _count(text: str, ranges: tuple[tuple[int, int], ...]) -> int:
     return sum(1 for character in text if any(low <= ord(character) <= high for low, high in ranges))
 
 
-def contains_supported_non_latin_script(text: str) -> bool:
-    """Return whether text contains characters from a supported native script."""
-
+def _is_native_letter(character: str) -> bool:
+    if not unicodedata.category(character).startswith("L"):
+        return False
+    code = ord(character)
     return any(
-        any(low <= ord(character) <= high for low, high in ranges)
-        for character in text
+        low <= code <= high
         for _script, _code, _nllb, _tesseract, ranges in _SCRIPTS
+        for low, high in ranges
     )
+
+
+def contains_supported_non_latin_script(text: str) -> bool:
+    """Return whether any native-script *word* survives in ``text``.
+
+    Machine translation occasionally leaves a danda, a native digit glyph, or a
+    single stray letter behind. Those are typography and are tolerated. A run of
+    two or more native letters is an untranslated word (usually a name or an
+    address token), which must not be forwarded to the gateway.
+    """
+
+    run = 0
+    for character in text:
+        if _is_native_letter(character):
+            run += 1
+            if run >= 2:
+                return True
+        else:
+            run = 0
+    return False
 
 
 def detect_language(text: str) -> DetectedLanguage:

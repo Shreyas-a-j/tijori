@@ -7,11 +7,20 @@ import re
 import pytest
 
 import ingest.translate as translate_module
-from ingest.language import DetectedLanguage, detect_language
+from ingest.language import (
+    DetectedLanguage,
+    contains_supported_non_latin_script,
+    detect_language,
+)
 from ingest.translate import TranslationUnavailable, translate_to_english
 
 ENGLISH = DetectedLanguage("en", "Latin", "eng_Latn", "eng", True)
 TAMIL = DetectedLanguage("ta", "Tamil", "tam_Taml", "tam", False)
+
+
+@pytest.fixture(autouse=True)
+def translation_enabled_for_translation_tests(monkeypatch):
+    monkeypatch.setenv("TIJORI_TRANSLATE_ENABLED", "1")
 
 
 class FakeTokenizer:
@@ -122,6 +131,22 @@ def test_native_script_left_in_translation_fails_closed(monkeypatch):
 
     with pytest.raises(TranslationUnavailable, match="native-script"):
         translate_to_english("வணக்கம்", TAMIL)
+
+
+def test_native_script_validator_ignores_punctuation_and_digits():
+    assert not contains_supported_non_latin_script("English text । digit ௧")
+
+
+def test_native_script_validator_ignores_a_single_stray_letter():
+    assert not contains_supported_non_latin_script("English text with one ழ glyph")
+
+
+def test_native_script_validator_rejects_an_untranslated_word():
+    assert contains_supported_non_latin_script("Address: வைஶாலி நகர், Jaipur")
+
+
+def test_native_script_validator_rejects_mostly_native_letters():
+    assert contains_supported_non_latin_script("தமிழ் வாக்கியம் இது")
 
 
 def _nllb_weights_cached() -> bool:
